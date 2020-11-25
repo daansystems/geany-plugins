@@ -21,24 +21,7 @@
 
 using Geany;
 
-public Plugin geany_plugin;
-public Data geany_data;      
-
 IOChannel input = null;
-
-public int plugin_version_check(int abi_version)
-{
-    // warning("ABIVERSION: %d", abi_version);
-    return 0;
-}
-
-public void plugin_set_info(PluginInfo info)
-{
-    info.author = "DaanSystems";
-    info.description = "ESLint syntax check integration";
-    info.name = "ESLint";
-    info.version = "0.1";
-}
 
 internal void parse_eslint(string json) throws Error
 {
@@ -151,7 +134,7 @@ internal void do_lint (GLib.Object geany_object, Document doc, void *user_data) 
         var editor = doc.editor;
         var sci = editor.sci;
         if (input == null) {
-            var js_code = resources_lookup_data ("/geanyeslint/lint.js", ResourceLookupFlags.NONE); 
+            var js_code = resources_lookup_data ("/lint.js", ResourceLookupFlags.NONE); 
             string? node_path = Environment.find_program_in_path ("node");
             if (node_path == null) {
                 // Try windows default installation path.
@@ -204,27 +187,47 @@ internal void do_lint (GLib.Object geany_object, Document doc, void *user_data) 
     }
 }
 
-public void plugin_init(Geany.Data data)
-{
-    geany_plugin.module_make_resident();
-    // data.object.connect("signal::document-save", do_lint);
-    geany_plugin.signal_connect(null, "document-save", true, (GLib.Callback)do_lint, null);
-    geany_plugin.signal_connect(null, "document-open", true, (GLib.Callback)do_lint, null);
-    geany_plugin.signal_connect(null, "document-reload", true, (GLib.Callback)do_lint, null);
-}
-
 public void show_error(string text, Document ?doc = null) {
     msgwin_msg_add_string (MsgColors.RED, 1, doc, text.replace("\n", " "));
     msgwin_switch_tab(MessageWindowTabNum.MESSAGE, false);
 }
 
-public void plugin_cleanup ()
+internal bool eslint_init(Plugin plugin, void *data)
+{
+    return true;
+}
+
+internal void eslint_cleanup(Plugin plugin, void *data)
 {
     if (input != null) {
         try {
             input.shutdown(true);
+            input = null;
         } catch (GLib.Error e) {
             show_error("ERROR: " + e.message);
         }
+    }
+}
+
+const PluginCallback eslint_callbacks[] = {
+    { "document-open", (GLib.Callback) do_lint, true, null },
+    { "document-save", (GLib.Callback) do_lint,true, null },
+    { "document-reload", (GLib.Callback) do_lint, true, null },
+    { null, null, false, null }
+};
+
+public void geany_load_module(Plugin plugin)
+{
+	plugin.info.name = "ESLint";
+	plugin.info.description = "ESLint syntax check integration";
+	plugin.info.version = "0.1";
+	plugin.info.author = "DaanSystems";
+	plugin.funcs.init = eslint_init;
+    plugin.funcs.cleanup = eslint_cleanup;
+    plugin.funcs.callbacks = (PluginCallback *) eslint_callbacks;
+    if (!plugin.register(api_version(), 239, abi_version)) {
+        warning("Failed to load %s plugin", plugin.info.name);
+    } else {
+        plugin.module_make_resident();
     }
 }

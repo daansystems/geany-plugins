@@ -1,13 +1,13 @@
-AC_DEFUN([GP_CHECK_MULTITERM],
+AC_DEFUN([GP_CHECK_ESLINT],
 [
-    GP_ARG_DISABLE([multiterm], [auto])
+    GP_ARG_DISABLE([eslint], [auto])
 
-    GP_CHECK_PLUGIN_VALA([multiterm])
-    GP_CHECK_PLUGIN_DEPS([multiterm], [MULTITERM], [gtk+-2.0 vte])
-    GP_COMMIT_PLUGIN_STATUS([MultiTerm])
+    GP_CHECK_PLUGIN_VALA([eslint])
+    GP_CHECK_PLUGIN_DEPS([eslint], [ESLINT], [json-glib-1.0])
+    GP_COMMIT_PLUGIN_STATUS([ESLint])
 
     AC_CONFIG_FILES([
-        multiterm/Makefile
-        multiterm/src/Makefile
+        eslint/Makefile
+        eslint/src/Makefile
     ])
 ])

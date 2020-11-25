@@ -12,8 +12,12 @@ eslint_la_VALAFLAGS = \
 	--pkg json-glib-1.0 \
 	--header eslint.h
 
+eslint.resources.c: eslint.resources.xml
+	glib-compile-resources --generate-source --internal --target $@ $<
+
 eslint_la_SOURCES = \
-	eslint.vala
+	eslint.vala \
+	eslint.resources.c
 
 eslint_la_CPPFLAGS = $(AM_CPPFLAGS) -DG_LOG_DOMAIN=\"ESLint\"
 eslint_la_CFLAGS = \
