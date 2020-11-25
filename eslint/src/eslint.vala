@@ -1,0 +1,230 @@
+/*
+ * plugin.vala - This file is part of the Geany ESLint plugin
+ *
+ * Copyright (c) 2020 DaanSystems <info@daansystems.com>.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
+ * MA 02110-1301, USA.
+ */
+
+using Geany;
+
+public Plugin geany_plugin;
+public Data geany_data;      
+
+IOChannel input = null;
+
+public int plugin_version_check(int abi_version)
+{
+    // warning("ABIVERSION: %d", abi_version);
+    return 0;
+}
+
+public void plugin_set_info(PluginInfo info)
+{
+    info.author = "DaanSystems";
+    info.description = "ESLint syntax check integration";
+    info.name = "ESLint";
+    info.version = "0.1";
+}
+
+internal void parse_eslint(string json) throws Error
+{
+    Json.Parser parser = new Json.Parser ();
+    parser.load_from_data (json);
+    Json.Node root = parser.get_root ();
+    var file_path = root.get_array().get_element(0).get_object().get_string_member("filePath");
+    var doc = Document.find_by_real_path(file_path);
+    var editor = doc.editor;
+    var sci = editor.sci;
+    var extended_styles_start = (int) sci.send_message(GeanyScintilla.SCI_ANNOTATIONGETSTYLEOFFSET, 0, 0);
+    if (extended_styles_start == 0) {
+        extended_styles_start = (int) sci.send_message(GeanyScintilla.SCI_ALLOCATEEXTENDEDSTYLES, 3, 0);
+        sci.send_message(GeanyScintilla.SCI_ANNOTATIONSETSTYLEOFFSET, extended_styles_start, 0);
+        sci.send_message(GeanyScintilla.SCI_STYLESETFORE, extended_styles_start + 1, 0x00ffff);
+        sci.send_message(GeanyScintilla.SCI_STYLESETFORE, extended_styles_start + 2, 0x0000ff);
+    }
+    editor.indicator_clear(Indicator.ERROR);
+    sci.send_message(GeanyScintilla.SCI_ANNOTATIONCLEARALL, 0, 0);
+    var lint_messages = Json.Path.query("$..messages[*]", root);
+    lint_messages.get_array().foreach_element((array, index, item) => {
+        var obj = item.get_object();
+        var line = (int)obj.get_int_member("line") - 1;
+        var end_line = (int)obj.get_int_member("endLine") - 1;
+        var column = (int)obj.get_int_member("column") - 1;
+        var end_column = (int)obj.get_int_member("endColumn") - 1;
+        var message = obj.get_string_member("message");
+        var rule_id = obj.get_string_member("ruleId");
+        var severity = (int)obj.get_int_member("severity");
+        // warning("line: %d column: %d end_line: %d end_column: %d severity: %d message: %s", line, column, end_line, end_column, severity, message);
+        int start_range = sci.get_position_from_line(line) + column;
+        int end_range = sci.get_position_from_line(end_line) + end_column;
+        editor.indicator_set_on_range(Indicator.ERROR, start_range, end_range);
+        string annotation = message + " (" + rule_id + ")";
+        string annotation_style = string.nfill(annotation.length + 1, (char)severity);
+        int buffer_previous_size = (int)sci.send_message(GeanyScintilla.SCI_ANNOTATIONGETTEXT, line, (intptr) 0);
+        if (buffer_previous_size > 0) {
+            var annotation_previous = new uint8[buffer_previous_size];
+            sci.send_message(GeanyScintilla.SCI_ANNOTATIONGETTEXT, line, (intptr) annotation_previous);
+            var annotation_previous_style = new uint8[buffer_previous_size];
+            sci.send_message(GeanyScintilla.SCI_ANNOTATIONGETSTYLES, line, (intptr) annotation_previous_style);
+            annotation = (string)annotation_previous + "\n" + annotation;
+            annotation_style = (string)annotation_previous_style + annotation_style;
+        }
+        sci.send_message(GeanyScintilla.SCI_ANNOTATIONSETTEXT, line, (intptr) annotation.data);
+        sci.send_message(GeanyScintilla.SCI_ANNOTATIONSETSTYLES, line, (intptr) annotation_style);
+    });
+    sci.send_message(GeanyScintilla.SCI_ANNOTATIONSETVISIBLE, GeanyScintilla.ANNOTATION_BOXED, 0);
+}
+
+internal bool handle_stdout(IOChannel channel, IOCondition condition) {
+    if (condition != IOCondition.IN) {
+        input = null;
+        return false;
+    }
+    try {
+        string str_return;
+        size_t length;
+        channel.read_line (out str_return, out length, null);
+        // warning("GOT: %s", str_return);
+        parse_eslint(str_return);
+    } catch (GLib.Error e) {
+        show_error("ERROR: " + e.message);
+    }
+    return true;
+}
+
+internal bool handle_stderr(IOChannel channel, IOCondition condition) {
+    if (condition != IOCondition.IN) {
+        input = null;
+        return false;
+    }
+    warning("IO CONDITION: %d", condition);
+    try {
+        var fatal = false;
+        string str_return;
+        size_t length;
+        channel.read_line (out str_return, out length, null);
+        // warning("GOT ERROR: %s", str_return);
+        Json.Parser parser = new Json.Parser ();
+        parser.load_from_data (str_return);
+        Json.Node root = parser.get_root ();
+        root.get_array().foreach_element((array, index, item) => {
+            var error_object = item.get_object();
+            var file_path = error_object.get_string_member("filePath");
+            var error = error_object.get_string_member("error");
+            fatal = error_object.get_boolean_member("fatal");
+            var doc = Document.find_by_real_path(file_path);
+            var prefix = file_path.length == 0 ? "ERROR" : file_path;
+            show_error(prefix + ": " + error, doc);
+        });
+        if (fatal) {
+            input.shutdown(true);
+            input = null;
+            return false;
+        } else {
+            return true;
+        }
+    } catch (GLib.Error e) {
+        show_error("ERROR: " + e.message);
+        return false;
+    }
+}
+
+internal void do_lint (GLib.Object geany_object, Document doc, void *user_data) {
+    try {
+        if (doc.file_type.id != FiletypeID.FILETYPES_JS) {
+            return;
+        }
+        var editor = doc.editor;
+        var sci = editor.sci;
+        if (input == null) {
+            var js_code = resources_lookup_data ("/geanyeslint/lint.js", ResourceLookupFlags.NONE); 
+            string? node_path = Environment.find_program_in_path ("node");
+            if (node_path == null) {
+                // Try windows default installation path.
+                node_path = Environment.find_program_in_path ("C:/Program Files/nodejs/node.exe");
+                if (node_path == null) {
+                    throw new SpawnError.NOENT("Cannot find node executable in PATH");
+                }
+            }
+            string[] spawn_args = {node_path, "-e", (string)Bytes.unref_to_data(js_code)};
+            string[] spawn_env = Environ.get ();
+            Pid child_pid;
+            int standard_input;
+            int standard_output;
+            int standard_error;
+            var path = Path.get_dirname (doc.real_path);
+            Process.spawn_async_with_pipes (
+                path,
+                spawn_args,
+                spawn_env,
+                GLib.SpawnFlags.SEARCH_PATH,
+                null,
+                out child_pid,
+                out standard_input,
+                out standard_output,
+                out standard_error);
+            input = new IOChannel.unix_new (standard_input);
+            var output = new IOChannel.unix_new (standard_output);
+            var error = new IOChannel.unix_new (standard_error);
+            output.add_watch (IOCondition.IN | IOCondition.HUP, handle_stdout);
+            error.add_watch (IOCondition.IN | IOCondition.HUP, handle_stderr);
+        }
+        var code = sci.get_contents(sci.get_length() + 1);
+        var builder = new Json.Builder ();
+        builder.begin_array();
+        builder.begin_object ();
+        builder.set_member_name ("code");
+        builder.add_string_value (code);
+        builder.set_member_name ("filePath");
+        builder.add_string_value (doc.real_path);
+        builder.end_object ();
+        builder.end_array ();
+        var generator = new Json.Generator ();
+        generator.set_root (builder.get_root ());
+        string json = generator.to_data (null);
+        size_t done;
+        input.write_chars((char[])(json + "\n"), out done);
+        input.flush();
+    } catch (GLib.Error e) {
+        show_error("ERROR: " + e.message, doc);
+    }
+}
+
+public void plugin_init(Geany.Data data)
+{
+    geany_plugin.module_make_resident();
+    // data.object.connect("signal::document-save", do_lint);
+    geany_plugin.signal_connect(null, "document-save", true, (GLib.Callback)do_lint, null);
+    geany_plugin.signal_connect(null, "document-open", true, (GLib.Callback)do_lint, null);
+    geany_plugin.signal_connect(null, "document-reload", true, (GLib.Callback)do_lint, null);
+}
+
+public void show_error(string text, Document ?doc = null) {
+    msgwin_msg_add_string (MsgColors.RED, 1, doc, text.replace("\n", " "));
+    msgwin_switch_tab(MessageWindowTabNum.MESSAGE, false);
+}
+
+public void plugin_cleanup ()
+{
+    if (input != null) {
+        try {
+            input.shutdown(true);
+        } catch (GLib.Error e) {
+            show_error("ERROR: " + e.message);
+        }
+    }
+}

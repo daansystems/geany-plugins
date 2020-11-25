@@ -1,0 +1,39 @@
+.. |(version)| replace:: 0.1
+
+========
+geanyeslint
+========
+
+.. contents::
+
+About
+=====
+
+Geanyeslint is plugin for Geany IDE that enables linting javascript files using ESLint.
+Files are automatically linted based on the available eslint installation.
+Issues are shown as annotations in the editor.
+
+Usage
+=====
+
+Enable the plugin in plugin manager. If any errors occur these are shown in the messages tab.
+
+License
+=======
+
+geanydoc is distributed under the terms of the GNU General Public License
+as published by the Free Software Foundation; either version 3 of the
+License, or (at your option) any later version. A copy of this license
+can be found in the file COPYING included with the source code of this
+program.
+
+Download
+========
+
+geanyeslint can be found at:
+https://github.com/daansystems/geany-eslint
+
+Author
+======
+
+DaanSystems info@daansystems.com

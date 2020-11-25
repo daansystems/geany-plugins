@@ -67,6 +67,9 @@ addons:
     - libxml2-dev
     # spellcheck
     - libenchant-dev
+    # eslint
+    - valac
+    - libjson-glib-dev
 
     # for libgit2 build
     - cmake

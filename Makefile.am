@@ -187,3 +187,7 @@ endif
 if ENABLE_XMLSNIPPETS
 SUBDIRS += xmlsnippets
 endif
+
+if ENABLE_ESLINT
+SUBDIRS += eslint
+endif

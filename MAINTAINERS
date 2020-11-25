@@ -327,3 +327,10 @@ g: @earshinov
 M: Eugene Arshinov <earshinov@gmail.com>
 W: http://plugins.geany.org/xmlsnippets.html
 S: Maintained
+
+eslint
+P: DaanSystems <info@daansystems.com>
+g: @daansystems
+M: DaanSystems <info@daansystems.com>
+W: http://plugins.geany.org/eslint.html
+S: Maintained

@@ -1,7 +1,8 @@
 Geany Plugins 1.38 (not released yet)
 
-    * nothing so far
-
+    ESLint:
+    * New plugin to support linting javascript/typescript 
+      and show annotations in the editor.
 
 Geany Plugins 1.37 (2020-10-25)
 
