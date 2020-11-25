@@ -1,5 +1,2 @@
-src/*.so
-src/*.dll
-src/*.dylib
-src/*.c
-src/eslint.vapi
+*_vala.stamp
+src/*.[ch]
