@@ -22,6 +22,7 @@
 using Geany;
 
 IOChannel input = null;
+string js_code;
 
 internal void parse_eslint(string json) throws Error
 {
@@ -81,10 +82,10 @@ internal bool handle_stdout(IOChannel channel, IOCondition condition) {
         string str_return;
         size_t length;
         channel.read_line (out str_return, out length, null);
-        // warning("GOT: %s", str_return);
+        // warning("GOT stdout: %s", str_return);
         parse_eslint(str_return);
     } catch (GLib.Error e) {
-        show_error("ERROR: " + e.message);
+        show_error("STDOUT ERROR: " + e.message);
     }
     return true;
 }
@@ -94,16 +95,13 @@ internal bool handle_stderr(IOChannel channel, IOCondition condition) {
         input = null;
         return false;
     }
-    warning("IO CONDITION: %d", condition);
     try {
         var fatal = false;
         string str_return;
         size_t length;
         channel.read_line (out str_return, out length, null);
-        // warning("GOT ERROR: %s", str_return);
-        Json.Parser parser = new Json.Parser ();
-        parser.load_from_data (str_return);
-        Json.Node root = parser.get_root ();
+        // warning("GOT ERR: %s", str_return);
+        Json.Node root = Json.from_string(str_return);
         root.get_array().foreach_element((array, index, item) => {
             var error_object = item.get_object();
             var file_path = error_object.get_string_member("filePath");
@@ -121,10 +119,11 @@ internal bool handle_stderr(IOChannel channel, IOCondition condition) {
             return true;
         }
     } catch (GLib.Error e) {
-        show_error("ERROR: " + e.message);
+        show_error("STDERR ERROR: " + e.message);
         return false;
     }
 }
+
 
 internal void do_lint (GLib.Object geany_object, Document doc, void *user_data) {
     try {
@@ -134,7 +133,6 @@ internal void do_lint (GLib.Object geany_object, Document doc, void *user_data) 
         var editor = doc.editor;
         var sci = editor.sci;
         if (input == null) {
-            var js_code = resources_lookup_data ("/lint.js", ResourceLookupFlags.NONE); 
             string? node_path = Environment.find_program_in_path ("node");
             if (node_path == null) {
                 // Try windows default installation path.
@@ -143,14 +141,14 @@ internal void do_lint (GLib.Object geany_object, Document doc, void *user_data) 
                     throw new SpawnError.NOENT("Cannot find node executable in PATH");
                 }
             }
-            string[] spawn_args = {node_path, "-e", (string)Bytes.unref_to_data(js_code)};
+            string[] spawn_args = {node_path, "-e", js_code};
             string[] spawn_env = Environ.get ();
             Pid child_pid;
             int standard_input;
             int standard_output;
             int standard_error;
             var path = Path.get_dirname (doc.real_path);
-            Process.spawn_async_with_pipes (
+            if (!Process.spawn_async_with_pipes (
                 path,
                 spawn_args,
                 spawn_env,
@@ -159,7 +157,10 @@ internal void do_lint (GLib.Object geany_object, Document doc, void *user_data) 
                 out child_pid,
                 out standard_input,
                 out standard_output,
-                out standard_error);
+                out standard_error)) {
+                     show_error("spawn fail");
+                throw new SpawnError.FAILED("Spawn error");
+            }
             input = new IOChannel.unix_new (standard_input);
             var output = new IOChannel.unix_new (standard_output);
             var error = new IOChannel.unix_new (standard_error);
@@ -176,11 +177,10 @@ internal void do_lint (GLib.Object geany_object, Document doc, void *user_data) 
         builder.add_string_value (doc.real_path);
         builder.end_object ();
         builder.end_array ();
-        var generator = new Json.Generator ();
-        generator.set_root (builder.get_root ());
-        string json = generator.to_data (null);
+        var json = Json.to_string(builder.get_root(), false);
         size_t done;
-        input.write_chars((char[])(json + "\n"), out done);
+        // input.write_chars((char[])(json + "\n"), out done);
+        input.write_chars((json + "\n").to_utf8(), out done);
         input.flush();
     } catch (GLib.Error e) {
         show_error("ERROR: " + e.message, doc);
@@ -188,12 +188,19 @@ internal void do_lint (GLib.Object geany_object, Document doc, void *user_data) 
 }
 
 public void show_error(string text, Document ?doc = null) {
-    msgwin_msg_add_string (MsgColors.RED, 1, doc, text.replace("\n", " "));
+    var msg = "ESLint " + text.replace("\n", " ");
+    msgwin_msg_add_string (MsgColors.RED, 1, doc, msg);
     msgwin_switch_tab(MessageWindowTabNum.MESSAGE, false);
 }
 
 internal bool eslint_init(Plugin plugin, void *data)
 {
+    try {
+        var js_code_bytes = resources_lookup_data ("/lint.js", ResourceLookupFlags.NONE);
+        js_code = (string) js_code_bytes.get_data();
+    } catch (GLib.Error e) {
+        show_error("ERROR: " + e.message);
+    }
     return true;
 }
 
@@ -218,15 +225,15 @@ const PluginCallback eslint_callbacks[] = {
 
 public void geany_load_module(Plugin plugin)
 {
-	plugin.info.name = "ESLint";
-	plugin.info.description = "ESLint syntax check integration";
-	plugin.info.version = "0.1";
-	plugin.info.author = "DaanSystems";
-	plugin.funcs.init = eslint_init;
+    plugin.info.name = "ESLint";
+    plugin.info.description = "ESLint syntax check integration";
+    plugin.info.version = "0.1";
+    plugin.info.author = "DaanSystems";
+    plugin.funcs.init = eslint_init;
     plugin.funcs.cleanup = eslint_cleanup;
     plugin.funcs.callbacks = (PluginCallback *) eslint_callbacks;
     if (!plugin.register(api_version(), 239, abi_version)) {
-        warning("Failed to load %s plugin", plugin.info.name);
+        show_error("Failed to load plugin");
     } else {
         plugin.module_make_resident();
     }
