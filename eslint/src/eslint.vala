@@ -21,16 +21,18 @@
 
 using Geany;
 
-IOChannel input = null;
-string js_code;
+static IOChannel input = null;
+static string js_code;
 
 internal void parse_eslint(string json) throws Error
 {
-    Json.Parser parser = new Json.Parser ();
-    parser.load_from_data (json);
-    Json.Node root = parser.get_root ();
+    Json.Node root = Json.from_string(json);
     var file_path = root.get_array().get_element(0).get_object().get_string_member("filePath");
     var doc = Document.find_by_real_path(file_path);
+    if (doc == null) {
+        show_error("CANNOT FIND DOC: " + json);
+        return;
+    }
     var editor = doc.editor;
     var sci = editor.sci;
     var extended_styles_start = (int) sci.send_message(GeanyScintilla.SCI_ANNOTATIONGETSTYLEOFFSET, 0, 0);
@@ -46,9 +48,9 @@ internal void parse_eslint(string json) throws Error
     lint_messages.get_array().foreach_element((array, index, item) => {
         var obj = item.get_object();
         var line = (int)obj.get_int_member("line") - 1;
-        var end_line = (int)obj.get_int_member("endLine") - 1;
+        var end_line = (int)obj.get_int_member_with_default("endLine", line + 1) - 1;
         var column = (int)obj.get_int_member("column") - 1;
-        var end_column = (int)obj.get_int_member("endColumn") - 1;
+        var end_column = (int)obj.get_int_member_with_default("endColumn", column + 1) - 1;
         var message = obj.get_string_member("message");
         var rule_id = obj.get_string_member("ruleId");
         var severity = (int)obj.get_int_member("severity");
@@ -81,9 +83,14 @@ internal bool handle_stdout(IOChannel channel, IOCondition condition) {
     try {
         string str_return;
         size_t length;
-        channel.read_line (out str_return, out length, null);
+        var status = channel.read_line (out str_return, out length, null);
+        warning("STATUS STDOUT: %s", str_return);
+        // while(channel.read_line (out str_return, out length, null) != IOStatus.NORMAL) {
+
+        // channel.read_to_end (out str_return, out length);
         // warning("GOT stdout: %s", str_return);
-        parse_eslint(str_return);
+            parse_eslint(str_return);
+        // }
     } catch (GLib.Error e) {
         show_error("STDOUT ERROR: " + e.message);
     }
@@ -95,31 +102,34 @@ internal bool handle_stderr(IOChannel channel, IOCondition condition) {
         input = null;
         return false;
     }
+    string str_return;
     try {
         var fatal = false;
-        string str_return;
         size_t length;
-        channel.read_line (out str_return, out length, null);
-        // warning("GOT ERR: %s", str_return);
-        Json.Node root = Json.from_string(str_return);
-        root.get_array().foreach_element((array, index, item) => {
-            var error_object = item.get_object();
-            var file_path = error_object.get_string_member("filePath");
-            var error = error_object.get_string_member("error");
-            fatal = error_object.get_boolean_member("fatal");
-            var doc = Document.find_by_real_path(file_path);
-            var prefix = file_path.length == 0 ? "ERROR" : file_path;
-            show_error(prefix + ": " + error, doc);
-        });
-        if (fatal) {
-            input.shutdown(true);
-            input = null;
-            return false;
-        } else {
-            return true;
-        }
+        var status = channel.read_line (out str_return, out length, null);
+        warning("STATUS STDERR: %d", status);
+        // while(channel.read_line (out str_return, out length, null) == IOStatus.NORMAL) {
+            // channel.read_to_end (out str_return, out length);
+            // warning("GOT ERR: %s", str_return);       
+            Json.Node root = Json.from_string(str_return);
+            root.get_array().foreach_element((array, index, item) => {
+                var error_object = item.get_object();
+                var file_path = error_object.get_string_member("filePath");
+                var error = error_object.get_string_member("error");
+                fatal = error_object.get_boolean_member("fatal");
+                var doc = Document.find_by_real_path(file_path);
+                var prefix = file_path.length == 0 ? "ERROR" : file_path;
+                show_error(prefix + ": " + error, doc);
+            });
+            if (fatal) {
+                input.shutdown(true);
+                input = null;
+                return false;
+            }
+        //}
+        return true;
     } catch (GLib.Error e) {
-        show_error("STDERR ERROR: " + e.message);
+        show_error("STDERR ERROR: " + e.message + " line: " + str_return);
         return false;
     }
 }
@@ -179,7 +189,6 @@ internal void do_lint (GLib.Object geany_object, Document doc, void *user_data) 
         builder.end_array ();
         var json = Json.to_string(builder.get_root(), false);
         size_t done;
-        // input.write_chars((char[])(json + "\n"), out done);
         input.write_chars((json + "\n").to_utf8(), out done);
         input.flush();
     } catch (GLib.Error e) {
@@ -218,7 +227,7 @@ internal void eslint_cleanup(Plugin plugin, void *data)
 
 const PluginCallback eslint_callbacks[] = {
     { "document-open", (GLib.Callback) do_lint, true, null },
-    { "document-save", (GLib.Callback) do_lint,true, null },
+    { "document-save", (GLib.Callback) do_lint, true, null },
     { "document-reload", (GLib.Callback) do_lint, true, null },
     { null, null, false, null }
 };
