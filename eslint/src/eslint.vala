@@ -30,7 +30,7 @@ internal void parse_eslint(string json) throws Error
     var file_path = root.get_array().get_element(0).get_object().get_string_member("filePath");
     var doc = Document.find_by_real_path(file_path);
     if (doc == null) {
-        show_error("CANNOT FIND DOC: " + json);
+        show_error("cannot find document: " + json);
         return;
     }
     var editor = doc.editor;
@@ -54,7 +54,6 @@ internal void parse_eslint(string json) throws Error
         var message = obj.get_string_member("message");
         var rule_id = obj.get_string_member("ruleId");
         var severity = (int)obj.get_int_member("severity");
-        // warning("line: %d column: %d end_line: %d end_column: %d severity: %d message: %s", line, column, end_line, end_column, severity, message);
         int start_range = sci.get_position_from_line(line) + column;
         int end_range = sci.get_position_from_line(end_line) + end_column;
         editor.indicator_set_on_range(Indicator.ERROR, start_range, end_range);
@@ -84,15 +83,9 @@ internal bool handle_stdout(IOChannel channel, IOCondition condition) {
         string str_return;
         size_t length;
         var status = channel.read_line (out str_return, out length, null);
-        warning("STATUS STDOUT: %s", str_return);
-        // while(channel.read_line (out str_return, out length, null) != IOStatus.NORMAL) {
-
-        // channel.read_to_end (out str_return, out length);
-        // warning("GOT stdout: %s", str_return);
-            parse_eslint(str_return);
-        // }
+        parse_eslint(str_return);
     } catch (GLib.Error e) {
-        show_error("STDOUT ERROR: " + e.message);
+        show_error("parse error: " + e.message);
     }
     return true;
 }
@@ -107,29 +100,24 @@ internal bool handle_stderr(IOChannel channel, IOCondition condition) {
         var fatal = false;
         size_t length;
         var status = channel.read_line (out str_return, out length, null);
-        warning("STATUS STDERR: %d", status);
-        // while(channel.read_line (out str_return, out length, null) == IOStatus.NORMAL) {
-            // channel.read_to_end (out str_return, out length);
-            // warning("GOT ERR: %s", str_return);       
-            Json.Node root = Json.from_string(str_return);
-            root.get_array().foreach_element((array, index, item) => {
-                var error_object = item.get_object();
-                var file_path = error_object.get_string_member("filePath");
-                var error = error_object.get_string_member("error");
-                fatal = error_object.get_boolean_member("fatal");
-                var doc = Document.find_by_real_path(file_path);
-                var prefix = file_path.length == 0 ? "ERROR" : file_path;
-                show_error(prefix + ": " + error, doc);
-            });
-            if (fatal) {
-                input.shutdown(true);
-                input = null;
-                return false;
-            }
-        //}
+        Json.Node root = Json.from_string(str_return);
+        root.get_array().foreach_element((array, index, item) => {
+            var error_object = item.get_object();
+            var file_path = error_object.get_string_member("filePath");
+            var error = error_object.get_string_member("error");
+            fatal = error_object.get_boolean_member("fatal");
+            var doc = Document.find_by_real_path(file_path);
+            var prefix = file_path.length == 0 ? "error" : file_path;
+            show_error(prefix + ": " + error, doc);
+        });
+        if (fatal) {
+            input.shutdown(true);
+            input = null;
+            return false;
+        }
         return true;
     } catch (GLib.Error e) {
-        show_error("STDERR ERROR: " + e.message + " line: " + str_return);
+        show_error("error: " + e.message + " line: " + str_return);
         return false;
     }
 }
@@ -148,7 +136,7 @@ internal void do_lint (GLib.Object geany_object, Document doc, void *user_data) 
                 // Try windows default installation path.
                 node_path = Environment.find_program_in_path ("C:/Program Files/nodejs/node.exe");
                 if (node_path == null) {
-                    throw new SpawnError.NOENT("Cannot find node executable in PATH");
+                    throw new SpawnError.NOENT("cannot find node executable in PATH");
                 }
             }
             string[] spawn_args = {node_path, "-e", js_code};
@@ -168,7 +156,6 @@ internal void do_lint (GLib.Object geany_object, Document doc, void *user_data) 
                 out standard_input,
                 out standard_output,
                 out standard_error)) {
-                     show_error("spawn fail");
                 throw new SpawnError.FAILED("Spawn error");
             }
             input = new IOChannel.unix_new (standard_input);
@@ -192,7 +179,7 @@ internal void do_lint (GLib.Object geany_object, Document doc, void *user_data) 
         input.write_chars((json + "\n").to_utf8(), out done);
         input.flush();
     } catch (GLib.Error e) {
-        show_error("ERROR: " + e.message, doc);
+        show_error("error: " + e.message, doc);
     }
 }
 
@@ -208,7 +195,7 @@ internal bool eslint_init(Plugin plugin, void *data)
         var js_code_bytes = resources_lookup_data ("/lint.js", ResourceLookupFlags.NONE);
         js_code = (string) js_code_bytes.get_data();
     } catch (GLib.Error e) {
-        show_error("ERROR: " + e.message);
+        show_error("error: " + e.message);
     }
     return true;
 }
@@ -220,7 +207,7 @@ internal void eslint_cleanup(Plugin plugin, void *data)
             input.shutdown(true);
             input = null;
         } catch (GLib.Error e) {
-            show_error("ERROR: " + e.message);
+            show_error("error: " + e.message);
         }
     }
 }
@@ -242,7 +229,7 @@ public void geany_load_module(Plugin plugin)
     plugin.funcs.cleanup = eslint_cleanup;
     plugin.funcs.callbacks = (PluginCallback *) eslint_callbacks;
     if (!plugin.register(api_version(), 239, abi_version)) {
-        show_error("Failed to load plugin");
+        show_error("failed to load plugin");
     } else {
         plugin.module_make_resident();
     }
