@@ -82,7 +82,7 @@ internal bool handle_stdout(IOChannel channel, IOCondition condition) {
     try {
         string str_return;
         size_t length;
-        var status = channel.read_line (out str_return, out length, null);
+        channel.read_line (out str_return, out length, null);
         parse_eslint(str_return);
     } catch (GLib.Error e) {
         show_error("parse error: " + e.message);
@@ -99,7 +99,7 @@ internal bool handle_stderr(IOChannel channel, IOCondition condition) {
     try {
         var fatal = false;
         size_t length;
-        var status = channel.read_line (out str_return, out length, null);
+        channel.read_line (out str_return, out length, null);
         Json.Node root = Json.from_string(str_return);
         root.get_array().foreach_element((array, index, item) => {
             var error_object = item.get_object();
