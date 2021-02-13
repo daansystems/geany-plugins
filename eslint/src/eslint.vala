@@ -1,7 +1,7 @@
 /*
  * plugin.vala - This file is part of the Geany ESLint plugin
  *
- * Copyright (c) 2020 DaanSystems <info@daansystems.com>.
+ * Copyright (c) 2020-2021 DaanSystems <info@daansystems.com>.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -121,7 +121,6 @@ internal bool handle_stderr(IOChannel channel, IOCondition condition) {
         return false;
     }
 }
-
 
 internal void do_lint (GLib.Object geany_object, Document doc, void *user_data) {
     try {

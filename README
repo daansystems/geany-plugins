@@ -98,7 +98,6 @@ Available plugins are:
 * ``vimode`` -- the Vim-mode plugin
 * ``webhelper`` -- the WebHelper plugin
 * ``xmlsnippets`` -- the XMLSnippets plugin
-* ``eslint`` -- the ESLint plugin
 
 Example::
 
